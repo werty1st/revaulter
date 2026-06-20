@@ -138,6 +138,20 @@ type Config struct {
 	// +default false if a TTY is attached (e.g. in development); true otherwise.
 	LogAsJSON bool `env:"LOGASJSON" yaml:"logAsJson"`
 
+	// VAPID public key for Web Push, base64url-encoded uncompressed EC P-256 point.
+	// Generate a key pair with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-keygen@latest
+	// Leave empty to disable Web Push notifications.
+	VAPIDPublicKey string `env:"VAPIDPUBLICKEY" yaml:"vapidPublicKey"`
+
+	// VAPID private key for Web Push, base64url-encoded EC P-256 scalar.
+	// Must be paired with VAPIDPublicKey.
+	VAPIDPrivateKey string `env:"VAPIDPRIVATEKEY" yaml:"vapidPrivateKey"`
+
+	// VAPID subject — a mailto: or https: URI identifying the application operator.
+	// Required by the Web Push spec when VAPIDPublicKey/VAPIDPrivateKey are set.
+	// +default "mailto:admin@localhost"
+	VAPIDSubject string `env:"VAPIDSUBJECT" yaml:"vapidSubject"`
+
 	// Dev is meant for development only; it's undocumented
 	Dev Dev `yaml:"-"`
 

@@ -165,3 +165,23 @@ secretKey:
 ## Default: false if a TTY is attached (e.g. in development); true otherwise.
 #logAsJson:
 
+## vapidPublicKey (string)
+## Description:
+##   VAPID public key for Web Push, base64url-encoded uncompressed EC P-256 point.
+##   Generate a key pair with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-keygen@latest
+##   Leave empty to disable Web Push notifications.
+#vapidPublicKey:
+
+## vapidPrivateKey (string)
+## Description:
+##   VAPID private key for Web Push, base64url-encoded EC P-256 scalar.
+##   Must be paired with VAPIDPublicKey.
+#vapidPrivateKey:
+
+## vapidSubject (string)
+## Description:
+##   VAPID subject — a mailto: or https: URI identifying the application operator.
+##   Required by the Web Push spec when VAPIDPublicKey/VAPIDPrivateKey are set.
+## Default: "mailto:admin@localhost"
+#vapidSubject:
+

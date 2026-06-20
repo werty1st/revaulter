@@ -9,6 +9,7 @@ import SigningKeysTab from '$components/SigningKeysTab.svelte'
 import TextField from '$components/TextField.svelte'
 
 import type { DerivedSigningKey, V2CredentialItem, V2PublishedSigningKey } from '$lib/v2-types'
+import { getPushEnabled, getNotificationPermission, isPushSupported, subscribePush, unsubscribePush } from '$lib/push'
 
 type SettingsTab = 'user' | 'ip-restrictions' | 'password' | 'passkeys' | 'signing-keys' | 'audit-log'
 
@@ -69,6 +70,17 @@ let {
 }: Props = $props()
 
 let activeTab = $state<SettingsTab>('user')
+
+let pushSupported = $state(isPushSupported())
+let pushEnabled = $state(false)
+let pushPermission = $state<NotificationPermission>(getNotificationPermission())
+let pushBusy = $state(false)
+
+$effect(() => {
+    void getPushEnabled().then((v) => {
+        pushEnabled = v
+    })
+})
 
 let editingDisplayName = $state(false)
 let editDisplayNameValue = $state('')
@@ -265,6 +277,31 @@ function formatTimestamp(value: number | string): string {
     return formatDistanceToNowStrict(date, { addSuffix: true })
 }
 
+async function handleEnableNotifications() {
+    pushBusy = true
+    try {
+        const ok = await subscribePush()
+        if (ok) {
+            pushEnabled = true
+            pushPermission = getNotificationPermission()
+        } else {
+            pushPermission = getNotificationPermission()
+        }
+    } finally {
+        pushBusy = false
+    }
+}
+
+async function handleDisableNotifications() {
+    pushBusy = true
+    try {
+        await unsubscribePush()
+        pushEnabled = false
+    } finally {
+        pushBusy = false
+    }
+}
+
 const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'user', label: 'User', icon: 'user' },
     { id: 'ip-restrictions', label: 'Firewall', icon: 'brick-wall-shield' },
@@ -411,6 +448,36 @@ const tabs: { id: SettingsTab; label: string; icon: string }[] = [
                             <p class="text-xs text-neutral-500 dark:text-neutral-400">
                                 Verify this matches the fingerprint shown by the CLI on first contact
                             </p>
+                        </div>
+                    {/if}
+                    {#if pushSupported}
+                        <!-- Notifications -->
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-50">
+                                <Icon icon="bell" title="Notifications" size="4" />
+                                Notifications
+                            </div>
+                            {#if pushPermission === 'denied'}
+                                <p class="text-sm text-neutral-500 dark:text-neutral-400">
+                                    Notifications are blocked by your browser. Allow them in your browser settings to receive push alerts for new requests.
+                                </p>
+                            {:else if pushEnabled}
+                                <p class="text-sm text-neutral-500 dark:text-neutral-400">
+                                    Push notifications are enabled. You will be notified when a new request needs approval.
+                                </p>
+                                <Button variant="secondary" onclick={handleDisableNotifications} disabled={pushBusy}>
+                                    <Icon icon="bell-off" title="Disable" size="3.5" />
+                                    Disable notifications
+                                </Button>
+                            {:else}
+                                <p class="text-sm text-neutral-500 dark:text-neutral-400">
+                                    Enable push notifications to be alerted when a new request needs approval, even when this tab is in the background.
+                                </p>
+                                <Button variant="secondary" onclick={handleEnableNotifications} disabled={pushBusy}>
+                                    <Icon icon="bell" title="Enable" size="3.5" />
+                                    Enable notifications
+                                </Button>
+                            {/if}
                         </div>
                     {/if}
                 </div>

@@ -93,6 +93,17 @@ func (db *DB) SigningKeyStore() *SigningKeyStore {
 	return as
 }
 
+// PushSubscriptionStore returns an instance of PushSubscriptionStore
+func (db *DB) PushSubscriptionStore() *PushSubscriptionStore {
+	ps, err := NewPushSubscriptionStore(db)
+	if err != nil {
+		// Indicates a development-time error
+		panic(err)
+	}
+
+	return ps
+}
+
 func (db *DB) Begin(ctx context.Context) (*DbTx, error) {
 	tx, err := db.DatabaseConn.Begin(ctx)
 	if err != nil {
@@ -143,6 +154,17 @@ func (tx *DbTx) SigningKeyStore() *SigningKeyStore {
 	}
 
 	return as
+}
+
+// PushSubscriptionStore returns an instance of PushSubscriptionStore
+func (tx *DbTx) PushSubscriptionStore() *PushSubscriptionStore {
+	ps, err := NewPushSubscriptionStore(tx)
+	if err != nil {
+		// Indicates a development-time error
+		panic(err)
+	}
+
+	return ps
 }
 
 // ExecuteInTransaction executes a method in a transaction

@@ -163,7 +163,7 @@ func (s *Server) RouteV2RequestCreate(operation string) gin.HandlerFunc {
 		})
 
 		// Publish the new item
-		s.publishListItem(&db.V2RequestListItem{
+		listItem := &db.V2RequestListItem{
 			State:     state,
 			Status:    string(db.V2RequestStatusPending),
 			Operation: operation,
@@ -174,7 +174,11 @@ func (s *Server) RouteV2RequestCreate(operation string) gin.HandlerFunc {
 			Date:      now.Unix(),
 			Expiry:    now.Add(timeout).Unix(),
 			Note:      body.Note,
-		})
+		}
+		s.publishListItem(listItem)
+
+		// Send Web Push notifications in background
+		s.sendPushNotifications(c.Request.Context(), listItem)
 
 		// Notify users via webhook in background when configured
 		if s.webhook == nil {
