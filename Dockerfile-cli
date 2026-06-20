@@ -1,7 +1,8 @@
+ARG PREBUILD_IMAGE=revaulter-prebuild
+FROM ${PREBUILD_IMAGE} AS prebuild
+
 FROM gcr.io/distroless/static-debian12:nonroot
-# TARGETARCH is set automatically when using BuildKit
-ARG TARGETARCH
 # Default path for the trust store
 ENV TRUST_STORE_PATH=/data/trust.json
-COPY .bin/linux-${TARGETARCH}/revaulter-cli /bin
+COPY --from=prebuild /revaulter-cli /bin
 ENTRYPOINT ["/bin/revaulter-cli"]
