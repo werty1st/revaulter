@@ -139,7 +139,7 @@ type Config struct {
 	LogAsJSON bool `env:"LOGASJSON" yaml:"logAsJson"`
 
 	// VAPID public key for Web Push, base64url-encoded uncompressed EC P-256 point.
-	// Generate a key pair with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-keygen@latest
+	// Generate a key pair with: go run ./tools/gen-vapid-keys
 	// Leave empty to disable Web Push notifications.
 	VAPIDPublicKey string `env:"VAPIDPUBLICKEY" yaml:"vapidPublicKey"`
 

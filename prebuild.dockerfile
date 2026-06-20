@@ -9,22 +9,26 @@ RUN pnpm run build
 
 # Stage 2: Build the Go binaries
 FROM golang:1.26-alpine AS builder
-ARG TARGETARCH=amd64
+ARG BUILDARCH
+ARG GOARCH=${BUILDARCH}
 WORKDIR /app
 ENV GOEXPERIMENT=jsonv2
 ENV CGO_ENABLED=0
 ENV GOOS=linux
+ENV GOARCH=${GOARCH}
 
 COPY go.mod go.sum go.work go.work.sum ./
+COPY docs/go.mod docs/go.sum docs/
 RUN go mod download
 
 COPY . .
 COPY --from=frontend /app/client/web/dist ./client/web/dist
 
-RUN GOARCH=${TARGETARCH} go build -trimpath -o .bin/linux-${TARGETARCH}/revaulter ./cmd/revaulter && \
-    GOARCH=${TARGETARCH} go build -trimpath -o .bin/linux-${TARGETARCH}/revaulter-cli ./cmd/cli
+RUN go build -trimpath -o .bin/linux-${GOARCH}/revaulter ./cmd/revaulter && \
+    go build -trimpath -o .bin/linux-${GOARCH}/revaulter-cli ./cmd/cli
 
 # Export stage: only the built binaries
 FROM scratch
-ARG TARGETARCH=amd64
-COPY --from=builder /app/.bin/linux-${TARGETARCH}/ /
+ARG BUILDARCH
+ARG GOARCH=${BUILDARCH}
+COPY --from=builder /app/.bin/linux-${GOARCH}/ /

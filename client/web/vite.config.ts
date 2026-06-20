@@ -59,8 +59,13 @@ export default defineConfig(({ mode }) => {
                             type: 'image/svg+xml',
                         },
                         {
-                            src: 'apple-touch-icon-dark.png',
-                            sizes: '180x180',
+                            src: 'icon-192.png',
+                            sizes: '192x192',
+                            type: 'image/png',
+                        },
+                        {
+                            src: 'icon-512.png',
+                            sizes: '512x512',
                             type: 'image/png',
                         },
                     ],

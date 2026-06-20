@@ -9,7 +9,7 @@ import SigningKeysTab from '$components/SigningKeysTab.svelte'
 import TextField from '$components/TextField.svelte'
 
 import type { DerivedSigningKey, V2CredentialItem, V2PublishedSigningKey } from '$lib/v2-types'
-import { getPushEnabled, getNotificationPermission, isPushSupported, subscribePush, unsubscribePush } from '$lib/push'
+import { getPushEnabled, getNotificationPermission, hasNotificationSupport, isPushSupported, subscribePush, unsubscribePush } from '$lib/push'
 
 type SettingsTab = 'user' | 'ip-restrictions' | 'password' | 'passkeys' | 'signing-keys' | 'audit-log'
 
@@ -71,6 +71,7 @@ let {
 
 let activeTab = $state<SettingsTab>('user')
 
+let pushNotificationVisible = $state(hasNotificationSupport())
 let pushSupported = $state(isPushSupported())
 let pushEnabled = $state(false)
 let pushPermission = $state<NotificationPermission>(getNotificationPermission())
@@ -450,14 +451,18 @@ const tabs: { id: SettingsTab; label: string; icon: string }[] = [
                             </p>
                         </div>
                     {/if}
-                    {#if pushSupported}
+                    {#if pushNotificationVisible}
                         <!-- Notifications -->
                         <div class="space-y-2">
                             <div class="flex items-center gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-50">
                                 <Icon icon="bell" title="Notifications" size="4" />
                                 Notifications
                             </div>
-                            {#if pushPermission === 'denied'}
+                            {#if !pushSupported}
+                                <p class="text-sm text-neutral-500 dark:text-neutral-400">
+                                    Push notifications require HTTPS. Serve the app over a secure connection to enable them.
+                                </p>
+                            {:else if pushPermission === 'denied'}
                                 <p class="text-sm text-neutral-500 dark:text-neutral-400">
                                     Notifications are blocked by your browser. Allow them in your browser settings to receive push alerts for new requests.
                                 </p>

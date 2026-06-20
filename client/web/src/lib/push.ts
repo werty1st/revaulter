@@ -1,4 +1,9 @@
-/** Returns whether Web Push is supported in the current browser */
+/** Returns whether the browser has any Notification API at all (used to decide whether to show the UI section) */
+export function hasNotificationSupport(): boolean {
+    return 'Notification' in window
+}
+
+/** Returns whether Web Push is fully supported (requires HTTPS / secure context) */
 export function isPushSupported(): boolean {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
