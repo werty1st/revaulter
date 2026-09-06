@@ -5,6 +5,7 @@ scratchpad
 # Compiled
 .out
 .bin
+.dist
 .cache
 server/static
 .pnpm-store
@@ -118,3 +119,5 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,linux,macos,windows,go
+Makefile
+packaging/
