@@ -1,0 +1,23 @@
+# Configuration for revaulter-cli on this host (systemd EnvironmentFile)
+# Used by revaulter-zfs-unlock@.service and revaulter-zfs-setup
+#
+# Single-host deployment: everything below is pre-filled except the request key
+
+# Address of the Revaulter server
+REVAULTER_SERVER="https://vault.vpnpro.eu"
+
+# Per-user request key, copied from the Revaulter web UI
+# THIS IS THE ONLY VALUE YOU HAVE TO SET after installing the package
+REVAULTER_REQUEST_KEY=""
+
+# Pinned anchor trust store - created by `revaulter-zfs-setup` / `revaulter-cli trust`
+REVAULTER_TRUST_STORE="/etc/revaulter/cli/trust.json"
+
+# Directory holding the wrapped (envelope) keys, one JSON file per dataset
+REVAULTER_KEY_DIR="/etc/revaulter/keys"
+
+# How long one unlock request waits for approval before a new one is sent
+REVAULTER_UNLOCK_TIMEOUT=900
+
+# Pause between attempts
+REVAULTER_UNLOCK_RETRY_DELAY=60

@@ -1,0 +1,26 @@
+[Unit]
+Description=Unlock and mount ZFS dataset %I via Revaulter
+Documentation=https://github.com/ItalyPaleAle/revaulter
+# Run once the pool is imported and the network is up - NOT After=zfs.target:
+# zfs.target pulls in the mount/share chain, and units in that chain (nfs-server,
+# smbd, the fstab mounts under the dataset) are exactly what depends on this unit,
+# so ordering After=zfs.target closes the loop into a deadlock
+Wants=zfs-import.target network-online.target
+After=zfs-import.target network-online.target
+# %I is the unescaped instance name, so `systemctl enable revaulter-zfs-unlock@tank-data`
+# unlocks the dataset `tank/data`
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+EnvironmentFile=/etc/revaulter/cli/config
+ExecStart=/usr/bin/revaulter-zfs-unlock %I
+ExecStop=/usr/bin/revaulter-zfs-unlock --unload %I
+# The script retries internally until the request is approved, so a single start can
+# legitimately run for hours. No Restart= and no start timeout: a failing unit would
+# cancel the jobs of every unit that depends on us, and the later successful restart
+# is a new transaction that would not revive them
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

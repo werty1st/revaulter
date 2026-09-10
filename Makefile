@@ -75,7 +75,16 @@ COMMIT_HASH ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # revaulter-cli .deb metadata
-DEB_VERSION    ?= $(patsubst v%,%,$(APP_VERSION))
+#
+# packaging/ is gitignored, so `git describe` does NOT change when the scripts or
+# the systemd unit in it change - without a build stamp apt refuses the reinstall
+# with "is already the newest version". `:=` so date runs once per make invocation
+BUILD_STAMP := $(shell date -u +%Y%m%d%H%M%S)
+# Drop the -dirty suffix: build-cli-deb.sh turns "-" into "~", and "~" sorts
+# BEFORE an empty suffix in Debian versions, which would make it a downgrade.
+# +BUILD_STAMP already marks this as a local build and sorts monotonically up
+DEB_BASE_VERSION := $(patsubst v%,%,$(subst -dirty,,$(APP_VERSION)))
+DEB_VERSION    ?= $(DEB_BASE_VERSION)+$(BUILD_STAMP)
 DEB_MAINTAINER ?= gusty <werty1st@gmail.com>
 # Arch of the .deb the server image serves at /revaulter-cli.deb (nas1/nas2 are amd64)
 CLI_DEB_ARCH   ?= amd64

@@ -1,0 +1,49 @@
+[Unit]
+Description=Revaulter - unseal secrets with WebAuthn approval
+Documentation=https://github.com/ItalyPaleAle/revaulter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=revaulter
+Group=revaulter
+Environment=REVAULTER_CONFIG=/etc/revaulter/config.yaml
+ExecStart=/usr/bin/revaulter
+Restart=on-failure
+RestartSec=5
+
+# Database and any runtime state live here (systemd creates it as 0750 revaulter:revaulter)
+StateDirectory=revaulter
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/revaulter
+
+# Hardening - the service only needs to read its config and write /var/lib/revaulter
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/revaulter
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+UMask=0077
+# Uncomment if you set `port` below 1024 in config.yaml:
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

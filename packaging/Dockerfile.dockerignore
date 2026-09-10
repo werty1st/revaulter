@@ -1,0 +1,11 @@
+# Applies only to builds that use packaging/Dockerfile (BuildKit picks up
+# <dockerfile>.dockerignore automatically), so the upstream root Dockerfile
+# used by CI is unaffected
+
+.git
+**/node_modules
+.pnpm-store
+.bin
+.out
+.dist
+client/web/dist

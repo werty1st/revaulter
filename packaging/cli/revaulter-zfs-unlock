@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+# Unlocks (and mounts) a ZFS dataset by asking a Revaulter server to unwrap its
+# passphrase, then pipes the plaintext passphrase straight into `zfs load-key` -
+# it is never written to disk
+#
+# load-key / unload-key run recursively (-r) and mounting is `zfs mount -a`, so a
+# single instance unlocks a whole encryption-root tree
+#
+# Usage:
+#   revaulter-zfs-unlock <dataset>            unlock + mount
+#   revaulter-zfs-unlock --unload <dataset>   unmount + unload key
+#
+# Configuration comes from the environment (see /etc/revaulter/cli/config):
+#   REVAULTER_SERVER        HTTPS URL of the Revaulter server        (required)
+#   REVAULTER_REQUEST_KEY   per-user request key from the web UI     (required)
+#   REVAULTER_TRUST_STORE   pinned anchor trust store   (default /etc/revaulter/cli/trust.json)
+#   REVAULTER_KEY_DIR       wrapped-key directory       (default /etc/revaulter/keys)
+#   REVAULTER_UNLOCK_TIMEOUT      seconds one request waits for approval (default 900)
+#   REVAULTER_UNLOCK_RETRY_DELAY  seconds between attempts              (default 60)
+
+set -euo pipefail
+
+unload=0
+if [ "${1:-}" = "--unload" ]; then
+  unload=1
+  shift
+fi
+
+dataset="${1:-}"
+if [ -z "${dataset}" ]; then
+  echo "usage: revaulter-zfs-unlock [--unload] <dataset>" >&2
+  exit 2
+fi
+
+: "${REVAULTER_TRUST_STORE:=/etc/revaulter/cli/trust.json}"
+: "${REVAULTER_KEY_DIR:=/etc/revaulter/keys}"
+# Request cadence: one new approval request roughly every
+# REVAULTER_UNLOCK_TIMEOUT + REVAULTER_UNLOCK_RETRY_DELAY seconds
+: "${REVAULTER_UNLOCK_TIMEOUT:=900}"
+: "${REVAULTER_UNLOCK_RETRY_DELAY:=60}"
+
+keystatus() { zfs get -H -o value keystatus "${dataset}" 2>/dev/null || echo unknown; }
+mounted()   { zfs get -H -o value mounted   "${dataset}" 2>/dev/null || echo unknown; }
+
+if [ "${unload}" = 1 ]; then
+  zfs umount -a 2>/dev/null || true
+  if [ "$(keystatus)" = available ]; then
+    zfs unload-key -r "${dataset}"
+  fi
+  echo "Unloaded: ${dataset}"
+  exit 0
+fi
+
+if [ "$(keystatus)" = available ] && [ "$(mounted)" = yes ]; then
+  echo "Already unlocked and mounted: ${dataset}"
+  exit 0
+fi
+
+: "${REVAULTER_SERVER:?REVAULTER_SERVER is not set (see /etc/revaulter/cli/config)}"
+: "${REVAULTER_REQUEST_KEY:?REVAULTER_REQUEST_KEY is not set (see /etc/revaulter/cli/config)}"
+
+key_file="${REVAULTER_KEY_DIR}/${dataset}.json"
+if [ ! -f "${key_file}" ]; then
+  echo "wrapped passphrase not found: ${key_file} - run revaulter-zfs-setup first" >&2
+  exit 1
+fi
+
+if ! zfs list -H -o name "${dataset}" >/dev/null 2>&1; then
+  echo "dataset '${dataset}' does not exist (pool not imported, or wrong name - check 'zfs list')" >&2
+  exit 1
+fi
+
+if [ "$(keystatus)" != available ]; then
+  attempt=0
+  # Retry lives here, not in systemd's Restart=: a failing unit would cancel the
+  # jobs of everything that depends on us, and a later successful restart is a new
+  # transaction that does not revive them
+  while [ "$(keystatus)" != available ]; do
+    attempt=$(( attempt + 1 ))
+
+    # Give the server a moment at boot, but do not give up - the outer loop is what
+    # makes this survive a slow network
+    tries=0
+    until curl -fsS "${REVAULTER_SERVER%/}/healthz" >/dev/null 2>&1; do
+      tries=$(( tries + 1 ))
+      if [ "${tries}" -ge 10 ]; then
+        echo "Revaulter server at ${REVAULTER_SERVER} still unreachable - trying anyway" >&2
+        break
+      fi
+      sleep 3
+    done
+
+    # Small random delay so parallel units do not all hit rate-limiting at once
+    sleep "$(( (RANDOM % 3) + 1 ))"
+
+    # --timeout bounds one request: without it the client waits on a request the
+    # server has long expired, and nobody is ever asked again
+    echo "Unlock attempt ${attempt} for ${dataset} - approve the request in the web UI" >&2
+    if revaulter-cli decrypt \
+         --server "${REVAULTER_SERVER}" \
+         --request-key "${REVAULTER_REQUEST_KEY}" \
+         --trust-store "${REVAULTER_TRUST_STORE}" \
+         --json "${key_file}" \
+         --note "ZFS dataset ${dataset} - boot unlock on $(hostname)" \
+         --format raw \
+         --timeout "${REVAULTER_UNLOCK_TIMEOUT}" \
+       | zfs load-key -r "${dataset}"; then
+      continue    # loop condition re-checks keystatus and exits on success
+    fi
+
+    echo "Attempt ${attempt} failed (not approved, or the request expired) - new request in ${REVAULTER_UNLOCK_RETRY_DELAY}s" >&2
+    sleep "${REVAULTER_UNLOCK_RETRY_DELAY}"
+  done
+fi
+
+zfs mount -a
+
+echo "Unlocked and mounted: ${dataset}"

@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+
+# One-time setup for unlocking a ZFS dataset via Revaulter at boot
+#
+#   1. pins the server's anchor into the local trust store   (once per host)
+#   2. wraps the dataset passphrase with Revaulter, stores the envelope
+#   3. optionally creates the encrypted dataset (keyformat=passphrase)
+#   4. verifies the wrapped passphrase against the dataset
+#   5. enables revaulter-zfs-unlock@<dataset>.service
+#
+# Each Revaulter request must be approved by a passkey holder in the web UI
+#
+# Usage:
+#   revaulter-zfs-setup <dataset>            # register an existing encrypted dataset
+#   revaulter-zfs-setup --create <dataset>   # also `zfs create` it with a random passphrase
+#
+# The passphrase is read from the REVAULTER_PASSPHRASE env var if set, otherwise
+# prompted on the terminal (register mode only; --create generates a random one)
+#
+# Reads REVAULTER_SERVER / REVAULTER_REQUEST_KEY / REVAULTER_TRUST_STORE /
+# REVAULTER_KEY_DIR from the environment or /etc/revaulter/cli/config
+
+set -euo pipefail
+
+create=0
+if [ "${1:-}" = "--create" ]; then
+  create=1
+  shift
+fi
+
+dataset="${1:-}"
+if [ -z "${dataset}" ]; then
+  echo "usage: revaulter-zfs-setup [--create] <dataset>" >&2
+  exit 2
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must run as root" >&2
+  exit 1
+fi
+
+CONFIG_FILE="${CONFIG_FILE:-/etc/revaulter/cli/config}"
+if [ -f "${CONFIG_FILE}" ]; then
+  # shellcheck disable=SC1090
+  . "${CONFIG_FILE}"
+fi
+
+: "${REVAULTER_SERVER:?set REVAULTER_SERVER in ${CONFIG_FILE}}"
+: "${REVAULTER_REQUEST_KEY:?set REVAULTER_REQUEST_KEY in ${CONFIG_FILE}}"
+: "${REVAULTER_TRUST_STORE:=/etc/revaulter/cli/trust.json}"
+: "${REVAULTER_KEY_DIR:=/etc/revaulter/keys}"
+
+key_file="${REVAULTER_KEY_DIR}/${dataset}.json"
+aad_b64="$(printf '%s' "$(hostname):${dataset}" | base64 -w0)"
+
+# Fail early on a typo'd / not-yet-imported dataset (unless we're about to create it)
+if [ "${create}" != 1 ] && ! zfs list -H -o name "${dataset}" >/dev/null 2>&1; then
+  echo "dataset '${dataset}' does not exist" >&2
+  echo "check the name with 'zfs list', or pass --create to make it" >&2
+  exit 1
+fi
+
+install -d -m 0700 "$(dirname "${REVAULTER_TRUST_STORE}")"
+install -d -m 0700 "$(dirname "${key_file}")"
+
+# 1. Pin the server anchor (idempotent)
+if [ ! -s "${REVAULTER_TRUST_STORE}" ]; then
+  echo "### Pinning ${REVAULTER_SERVER} into ${REVAULTER_TRUST_STORE}"
+  revaulter-cli trust \
+    --server "${REVAULTER_SERVER}" \
+    --request-key "${REVAULTER_REQUEST_KEY}" \
+    --trust-store "${REVAULTER_TRUST_STORE}" \
+    --yes
+fi
+
+# Read or generate the passphrase to wrap
+passphrase=""
+if [ -f "${key_file}" ]; then
+  echo "### Wrapped passphrase already exists: ${key_file} (skipping wrap)"
+elif [ -n "${REVAULTER_PASSPHRASE:-}" ]; then
+  passphrase="${REVAULTER_PASSPHRASE}"
+elif [ "${create}" = 1 ]; then
+  # keyformat=passphrase needs >= 8 chars; 64 hex chars is plenty
+  passphrase="$(openssl rand -hex 32)"
+  echo "### Generated a random passphrase for the new dataset"
+else
+  read -rsp "Current passphrase for ${dataset}: " passphrase </dev/tty; echo
+  read -rsp "Repeat passphrase: " passphrase2 </dev/tty; echo
+  if [ "${passphrase}" != "${passphrase2}" ]; then
+    echo "Passphrases do not match" >&2
+    exit 1
+  fi
+  unset passphrase2
+fi
+
+# 2. Wrap the passphrase with Revaulter
+if [ ! -f "${key_file}" ]; then
+  echo "### Wrapping the passphrase for ${dataset} - approve the request in the web UI"
+  umask 077
+  tmp_file="${key_file}.tmp.$$"
+  trap 'rm -f "${tmp_file}"' EXIT
+  printf '%s' "${passphrase}" \
+    | revaulter-cli encrypt \
+        --server "${REVAULTER_SERVER}" \
+        --request-key "${REVAULTER_REQUEST_KEY}" \
+        --trust-store "${REVAULTER_TRUST_STORE}" \
+        --algorithm aes-256-gcm \
+        --key-label "zfs-$(hostname)" \
+        --input - \
+        --aad "${aad_b64}" \
+        --note "ZFS dataset ${dataset} on $(hostname)" \
+        --format json \
+    > "${tmp_file}"
+  chmod 0600 "${tmp_file}"
+  mv "${tmp_file}" "${key_file}"
+  trap - EXIT
+  echo "### Wrote ${key_file}"
+fi
+unset passphrase
+
+# 3. Optionally create the encrypted dataset
+just_created=0
+if [ "${create}" = 1 ] && ! zfs list -H -o name "${dataset}" >/dev/null 2>&1; then
+  echo "### Creating encrypted dataset ${dataset} - approve the request in the web UI"
+  revaulter-cli decrypt \
+    --server "${REVAULTER_SERVER}" \
+    --request-key "${REVAULTER_REQUEST_KEY}" \
+    --trust-store "${REVAULTER_TRUST_STORE}" \
+    --json "${key_file}" \
+    --note "Create ZFS dataset ${dataset} on $(hostname)" \
+    --format raw \
+  | zfs create \
+      -o encryption=aes-256-gcm \
+      -o keyformat=passphrase \
+      -o keylocation=prompt \
+      "${dataset}"
+  just_created=1
+fi
+
+# 4. Verify the wrapped passphrase actually unlocks the dataset (dry-run, no load)
+# Skipped right after `zfs create` - it was just made with this exact passphrase
+if [ "${just_created}" = 0 ] && zfs list -H -o name "${dataset}" >/dev/null 2>&1; then
+  echo "### Verifying the wrapped passphrase against ${dataset} - approve the request in the web UI"
+  if revaulter-cli decrypt \
+       --server "${REVAULTER_SERVER}" \
+       --request-key "${REVAULTER_REQUEST_KEY}" \
+       --trust-store "${REVAULTER_TRUST_STORE}" \
+       --json "${key_file}" \
+       --note "Verify ZFS dataset ${dataset} on $(hostname)" \
+       --format raw \
+     | zfs load-key -n -r "${dataset}"; then
+    echo "### Passphrase OK"
+  else
+    echo "### WARNING: could not verify the passphrase against ${dataset}" >&2
+    echo "### Left ${key_file} in place - fix it and re-run, or 'rm' it to start over" >&2
+    exit 1
+  fi
+fi
+
+# 5. Enable the boot unit
+unit="revaulter-zfs-unlock@$(systemd-escape "${dataset}").service"
+echo "### Enabling ${unit}"
+systemctl daemon-reload
+systemctl enable "${unit}"
+
+echo
+echo "Done. Test now with:  systemctl start ${unit}"
+echo "Services needing the dataset should add:  Requires=${unit}  After=${unit}"
